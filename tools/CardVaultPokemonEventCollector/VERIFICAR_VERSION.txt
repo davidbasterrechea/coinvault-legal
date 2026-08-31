@@ -1,0 +1,18 @@
+ANTES DE PROBAR:
+
+PowerShell:
+  Select-String -Path .\sync.mjs -Pattern "VERSION=12.9.46"
+
+Debe aparecer:
+  console.log("[collector] VERSION=12.9.46 OUTSYSTEMS_REAL_CONTROLS");
+
+Al ejecutar npm run sync, las primeras líneas DEBEN ser:
+
+==========================================================
+ CardVault Pokemon Event Collector 12.9.46
+ Motor: controles OutSystems reales (DoubleSwitch/Flatpickr)
+==========================================================
+[collector] VERSION=12.9.46 OUTSYSTEMS_REAL_CONTROLS
+
+Si aparece `/EventLocator/Home?latitude=...` o
+`selector: ninguno, bloques DOM: 0`, se está ejecutando un sync.mjs antiguo.

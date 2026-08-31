@@ -1,0 +1,1 @@
+https://events.pokemon.com/EventLocator/?locale=es-ES&range=25&startdate=2026-08-31&enddate=2026-11-29&iskm=false&latitude=41.3874374&longitude=2.1686496&filters=league_cup,league_challenge,tcg
