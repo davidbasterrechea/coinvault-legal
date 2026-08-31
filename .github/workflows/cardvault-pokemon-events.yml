@@ -1,26 +1,30 @@
 name: CardVault Pokemon Events
+
 on:
   workflow_dispatch:
   schedule:
-  - cron: "17 * * * *"
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: tools/CardVaultPokemonEventCollector
+    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: tools/CardVaultPokemonEventCollector/package.json
-      - run: npm install
-      - run: npx playwright install --with-deps chromium
-      - name: Sync official Pokemon events
-        run: npm run sync
+
+      - name: Sync Pokemon events from PokeData
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           CARDVAULT_EVENT_SYNC_TOKEN: ${{ secrets.CARDVAULT_EVENT_SYNC_TOKEN }}
+          CARDVAULT_EVENT_DEBUG: "0"
+        run: node sync_CARDVAULT_12.9.49_POKEDATA.mjs
