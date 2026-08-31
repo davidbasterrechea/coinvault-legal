@@ -1,5 +1,5 @@
 console.log("==========================================================");
-console.log(" CardVault Pokemon Event Collector 12.9.47");
+console.log(" CardVault Pokemon Event Collector 12.9.48");
 console.log(" Motor: controles OutSystems reales (DoubleSwitch/Flatpickr)");
 console.log("==========================================================");
 
@@ -17,7 +17,7 @@ if (!SUPABASE_URL || !TOKEN) {
   throw new Error("Faltan SUPABASE_URL o CARDVAULT_EVENT_SYNC_TOKEN.");
 }
 
-console.log("[collector] VERSION=12.9.47 OUTSYSTEMS_REAL_CONTROLS_DATE_MAX");
+console.log("[collector] VERSION=12.9.48 EVENTS_FALSE_FRESH_CONTEXT");
 
 const now = new Date();
 function ymd(d) {
@@ -133,64 +133,77 @@ async function clickTextControl(page, pattern) {
 }
 
 async function forceEventsMode(page, city) {
-  // HTML real del Locator:
-  // <div class="double-toggle"> ... <input data-switch class="switch"
-  // type="checkbox" id="...DoubleSwitch"> ... Eventos
   const toggle = page.locator('.double-toggle input[data-switch][type="checkbox"]').first();
 
   if (!await toggle.count()) {
-    throw new Error(`${city}: no encuentro el DoubleSwitch real Ubicaciones/Eventos.`);
+    throw new Error(`${city}: no encuentro DoubleSwitch.`);
   }
 
-  // Checkbox marcado = lado derecho = Eventos.
-  if (!await toggle.isChecked()) {
-    await toggle.check({ force:true });
-    await page.waitForTimeout(500);
+  // Verificado contra el Locator real:
+  // checked=true  => Ubicaciones
+  // checked=false => Eventos
+  if (await toggle.isChecked()) {
+    await toggle.uncheck({force:true});
+    await page.waitForTimeout(650);
   }
 
   const checked = await toggle.isChecked();
-  if (DEBUG) console.log(`[${city}] DoubleSwitch checked=${checked} => ${checked ? "Eventos" : "Ubicaciones"}`);
+  if (DEBUG) {
+    console.log(
+      `[${city}] DoubleSwitch checked=${checked} => ` +
+      `${checked ? "Ubicaciones" : "Eventos"}`
+    );
+  }
 
-  if (!checked) {
-    throw new Error(`${city}: no se pudo dejar DoubleSwitch en Eventos.`);
+  if (checked) {
+    throw new Error(`${city}: DoubleSwitch sigue en Ubicaciones.`);
   }
 }
 async function setFilters(page, city) {
-  const wanted = [
-    /Copa de Liga/i,
-    /Desaf[ií]o de Liga/i,
-    /Juego de Cartas Coleccionables Pok[eé]mon/i
+  const tags = page.locator('.el-tag-select[role="button"]');
+
+  const desired = [
+    { rx:/^Copa de Liga$/i, selected:true },
+    { rx:/^Desaf[ií]o de Liga$/i, selected:true },
+    { rx:/^Liga$/i, selected:false },
+    { rx:/^Prelanzamiento$/i, selected:false },
+    { rx:/^Torneo amistoso$/i, selected:false },
+    { rx:/^Juego de Cartas Coleccionables Pok[eé]mon$/i, selected:true },
+    { rx:/^Videojuegos$/i, selected:false },
+    { rx:/^Pok[eé]mon GO$/i, selected:false }
   ];
 
-  for (const rx of wanted) {
-    const candidates = page.locator('.el-tag-select[role="button"]');
+  for (const rule of desired) {
     let found = false;
 
-    for (let i=0; i<await candidates.count(); i++) {
-      const el = candidates.nth(i);
+    for (let i=0;i<await tags.count();i++) {
+      const el = tags.nth(i);
       if (!await el.isVisible().catch(()=>false)) continue;
 
       const text = clean(await el.innerText().catch(()=>""));
-      if (!rx.test(text)) continue;
-
+      if (!rule.rx.test(text)) continue;
       found = true;
-      const selected = (await el.getAttribute("aria-selected")) === "True";
-      if (!selected) {
+
+      const before = (await el.getAttribute("aria-selected")) === "True";
+      if (before !== rule.selected) {
         await el.click({force:true});
-        await page.waitForTimeout(250);
+        await page.waitForTimeout(300);
       }
 
-      const finalSelected = (await el.getAttribute("aria-selected")) === "True";
-      if (DEBUG) console.log(`[${city}] filtro "${text}" selected=${finalSelected}`);
+      const after = (await el.getAttribute("aria-selected")) === "True";
+      if (DEBUG) console.log(`[${city}] filtro "${text}" selected=${after}`);
 
-      if (!finalSelected) {
-        throw new Error(`${city}: no se pudo seleccionar filtro "${text}".`);
+      if (after !== rule.selected) {
+        throw new Error(
+          `${city}: filtro "${text}" debía quedar selected=${rule.selected} y quedó ${after}.`
+        );
       }
       break;
     }
 
-    if (!found) {
-      throw new Error(`${city}: no encuentro uno de los filtros requeridos (${rx}).`);
+    // Product/event filters used by this script must exist.
+    if (!found && rule.selected) {
+      throw new Error(`${city}: no encuentro filtro requerido ${rule.rx}.`);
     }
   }
 }
@@ -454,19 +467,17 @@ async function clickSearch(page, city) {
 }
 
 async function resultKind(page) {
-  const toggle = page.locator('.double-toggle input[data-switch][type="checkbox"]').first();
-  const checked = await toggle.isChecked().catch(()=>false);
   const body = clean(await page.locator("body").innerText().catch(()=>""));
-
-  if (checked) {
-    if (/\d+\s+Eventos/i.test(body) || /eventos? encontrados?/i.test(body)) return "events";
-    if (/No se han encontrado eventos/i.test(body)) return "events-empty";
-    return "events-ui";
-  }
 
   if (/\d+\s+Ubicaciones de Play!? Pok[eé]mon encontradas/i.test(body)) return "locations";
   if (/No se han encontrado ubicaciones/i.test(body)) return "locations-empty";
-  return "locations-ui";
+
+  if (/\d+\s+Eventos/i.test(body) || /eventos? encontrados?/i.test(body)) return "events";
+  if (/No se han encontrado eventos/i.test(body)) return "events-empty";
+
+  const toggle = page.locator('.double-toggle input[data-switch][type="checkbox"]').first();
+  const checked = await toggle.isChecked().catch(()=>true);
+  return checked ? "locations-ui" : "events-ui";
 }
 async function executeSearch(page, city) {
   await clickSearch(page,city);
@@ -479,16 +490,19 @@ async function ensureEventResults(page, city) {
   if (DEBUG) console.log(`[${city}] resultado=${kind}`);
 
   const toggle = page.locator('.double-toggle input[data-switch][type="checkbox"]').first();
-  if (!await toggle.isChecked().catch(()=>false)) {
-    console.log(`[${city}] el DoubleSwitch volvió a Ubicaciones; corrigiendo y buscando otra vez...`);
+  const checked = await toggle.isChecked().catch(()=>true);
+
+  if (checked || kind.startsWith("locations")) {
+    console.log(`[${city}] búsqueda cayó en Ubicaciones; forzando Eventos (checked=false) y repitiendo...`);
     await forceEventsMode(page, city);
+    await page.waitForTimeout(600);
     await executeSearch(page, city);
     kind = await resultKind(page);
     if (DEBUG) console.log(`[${city}] resultado segundo intento=${kind}`);
   }
 
-  if (!await toggle.isChecked().catch(()=>false)) {
-    throw new Error(`${city}: el Locator no conserva el modo Eventos.`);
+  if (await toggle.isChecked().catch(()=>true)) {
+    throw new Error(`${city}: DoubleSwitch terminó en Ubicaciones.`);
   }
 
   return kind;
@@ -590,7 +604,7 @@ async function searchCity(page,query,community,index){
 
   if(DEBUG){
     const sw = page.locator('.double-toggle input[data-switch][type="checkbox"]').first();
-    console.log(`[${city}] estado pre-búsqueda: Eventos=${await sw.isChecked().catch(()=>false)}`);
+    console.log(`[${city}] estado pre-búsqueda: Eventos=${!(await sw.isChecked().catch(()=>true))}`);
     console.log(`[${city}] URL pre-búsqueda: ${page.url()}`);
     await saveDebug(page,city,"antes");
   }
@@ -614,32 +628,39 @@ async function main(){
     args:["--disable-blink-features=AutomationControlled","--disable-dev-shm-usage","--no-sandbox"]
   });
 
-  const context=await browser.newContext({
-    locale:"es-ES",
-    timezoneId:"Europe/Madrid",
-    viewport:{width:1440,height:1100},
-    userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
-  });
-
-  const page=await context.newPage();
   const all=[];
 
   try{
-    await prepareBase(page);
     for(let i=0;i<searches.length;i++){
       const [query,community]=searches[i];
+      const city=query.split(",")[0];
+
+      // Cada ciudad usa un contexto limpio, equivalente a una sesión de incógnito.
+      // Evita que estado/cookies/errores del Locator se propaguen a la siguiente.
+      const context=await browser.newContext({
+        locale:"es-ES",
+        timezoneId:"Europe/Madrid",
+        viewport:{width:1440,height:1100},
+        userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+      });
+
+      const page=await context.newPage();
+
       try{
-        const rows=await searchCity(page,query,community,i);
+        await prepareBase(page);
+        const rows=await searchCity(page,query,community,0);
         all.push(...rows);
       }catch(e){
-        console.warn(`${query.split(",")[0]}: ERROR - ${e.message}`);
-        if(!page.isClosed()) await saveDebug(page,query.split(",")[0],"error");
-        // If the website itself killed/replaced the page, recreate it rather than cascade failures.
-        if(page.isClosed()) throw e;
+        console.warn(`${city}: ERROR - ${e.message}`);
+        if(!page.isClosed()) await saveDebug(page,city,"error");
+      }finally{
+        await context.close().catch(()=>{});
       }
+
+      // Ritmo conservador para no bombardear el Locator.
+      await new Promise(resolve=>setTimeout(resolve,1400));
     }
   }finally{
-    await context.close().catch(()=>{});
     await browser.close().catch(()=>{});
   }
 
@@ -653,12 +674,13 @@ async function main(){
   const response=await fetch(`${SUPABASE_URL}/functions/v1/sync-pokemon-events`,{
     method:"POST",
     headers:{"content-type":"application/json","x-cardvault-sync-token":TOKEN},
-    body:JSON.stringify({source:"cardvault-adaptive-locator",events:unique})
+    body:JSON.stringify({source:"cardvault-event-mode-fresh-context",events:unique})
   });
+
   const body=await response.text();
   if(!response.ok) throw new Error(`Supabase ${response.status}: ${body}`);
+
   console.log("Sincronización completada.");
   console.log(body);
 }
-
 await main();
